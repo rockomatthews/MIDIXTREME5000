@@ -1,37 +1,81 @@
-/*
-  Blink
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiUdp.h>
 
-  Turns an LED on for one second, then off for one second, repeatedly.
+#define SerialMon Serial
+#define APPLEMIDI_DEBUG SerialMon
+#include <AppleMIDI.h>
 
-  Most Arduinos have an on-board LED you can control. On the UNO, MEGA and ZERO
-  it is attached to digital pin 13, on MKR1000 on pin 6. LED_BUILTIN is set to
-  the correct LED pin independent of which board is used.
-  If you want to know what pin the on-board LED is connected to on your Arduino
-  model, check the Technical Specs of your board at:
-  https://www.arduino.cc/en/Main/Products
+char ssid[] = "rob69"; //  your network SSID (name)
+char pass[] = "testtest";    // your network password (use for WPA, or use as key for WEP)
 
-  modified 8 May 2014
-  by Scott Fitzgerald
-  modified 2 Sep 2016
-  by Arturo Guadalupi
-  modified 8 Sep 2016
-  by Colby Newman
+unsigned long t0 = millis();
+int8_t isConnected = 0;
 
-  This example code is in the public domain.
+APPLEMIDI_CREATE_DEFAULTSESSION_INSTANCE();
 
-  http://www.arduino.cc/en/Tutorial/Blink
-*/
+// -----------------------------------------------------------------------------
+//
+// -----------------------------------------------------------------------------
+void setup()
+{
+  DBG_SETUP(115200);
+  DBG("Booting");
 
-// the setup function runs once when you press reset or power the board
-void setup() {
-  // initialize digital pin LED_BUILTIN as an output.
-  pinMode(LED_BUILTIN, OUTPUT);
+  WiFi.begin(ssid, pass);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    DBG("Establishing connection to WiFi..");
+  }
+  DBG("Connected to network");
+
+  DBG(F("OK, now make sure you an rtpMIDI session that is Enabled"));
+  DBG(F("Add device named Arduino with Host"), WiFi.localIP(), "Port", AppleMIDI.getPort(), "(Name", AppleMIDI.getName(), ")");
+  DBG(F("Select and then press the Connect button"));
+  DBG(F("Then open a MIDI listener and monitor incoming notes"));
+  DBG(F("Listen to incoming MIDI commands"));
+
+  MIDI.begin();
+
+  AppleMIDI.setHandleConnected([](const APPLEMIDI_NAMESPACE::ssrc_t & ssrc, const char* name) {
+    isConnected++;
+    DBG(F("Connected to session"), ssrc, name);
+  });
+  AppleMIDI.setHandleDisconnected([](const APPLEMIDI_NAMESPACE::ssrc_t & ssrc) {
+    isConnected--;
+    DBG(F("Disconnected"), ssrc);
+  });
+  
+  MIDI.setHandleNoteOn([](byte channel, byte note, byte velocity) {
+    DBG(F("NoteOn"), note);
+  });
+  MIDI.setHandleNoteOff([](byte channel, byte note, byte velocity) {
+    DBG(F("NoteOff"), note);
+  });
+
+  DBG(F("Sending NoteOn/Off of note 45, every second"));
 }
 
-// the loop function runs over and over again forever
-void loop() {
-  digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-  delay(1000);                       // wait for a second
-  digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-  delay(1000);                       // wait for a second
+// -----------------------------------------------------------------------------
+//
+// -----------------------------------------------------------------------------
+void loop()
+{
+  // Listen to incoming notes
+  MIDI.read();
+
+  // send a note every second
+  // (dont cáll delay(1000) as it will stall the pipeline)
+  if ((isConnected > 0) && (millis() - t0) > 1000)
+  {
+    t0 = millis();
+
+    byte note = 45;
+    byte velocity = 55;
+    byte channel = 1;
+
+    MIDI.sendNoteOn(note, velocity, channel);
+    MIDI.sendNoteOff(note, velocity, channel);
+  }
 }
